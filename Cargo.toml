@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+blazefind-core = { path = "crates/core" }
 jwalk = "0.8.1"
 rayon = "1.12.0"
 rusqlite = "0.39.0"

@@ -74,6 +74,7 @@ dependencies = [
 name = "blazefind"
 version = "0.1.0"
 dependencies = [
+ "blazefind-core",
  "jwalk",
  "rayon",
  "rusqlite",
@@ -83,6 +84,10 @@ dependencies = [
 [[package]]
 name = "blazefind-core"
 version = "0.1.0"
+dependencies = [
+ "jwalk",
+ "rusqlite",
+]
 
 [[package]]
 name = "blazefind-daemon"
