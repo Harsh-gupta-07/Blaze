@@ -1,2 +1,5 @@
 /target
 /bin
+db/
+main.db
+.DS_Store

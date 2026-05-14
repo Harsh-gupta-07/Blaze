@@ -1,11 +1,53 @@
+use crate::types::FileEntry;
 use jwalk::WalkDir;
 use std::time::UNIX_EPOCH;
-use crate::types::FileEntry;
+
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".cache",
+    ".parcel-cache",
+    ".venv",
+    "venv",
+    "env",
+    "coverage",
+    ".gradle",
+    ".terraform",
+];
+
+
+fn should_ignore_dir(name: &str) -> bool {
+    IGNORED_DIRS.contains(&name)
+}
 
 pub fn scan_directory(root: &str) -> Vec<FileEntry> {
     WalkDir::new(root)
         .parallelism(jwalk::Parallelism::RayonNewPool(0))
         .skip_hidden(false)
+        .process_read_dir(|_, _, _, children| {
+            children.retain(|child| {
+                let Ok(child) = child.as_ref() else {
+                    return true;
+                };
+
+                let name = child.file_name.to_string_lossy();
+                !child.file_type.is_dir() || !should_ignore_dir(name.as_ref())
+            });
+        })
         .into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
@@ -33,6 +75,7 @@ pub fn scan_directory(root: &str) -> Vec<FileEntry> {
             };
 
             Some(FileEntry {
+                id: None,
                 path: entry.path().to_string_lossy().to_string(),
                 name: entry.file_name.to_string_lossy().to_string(),
                 size,
@@ -43,4 +86,3 @@ pub fn scan_directory(root: &str) -> Vec<FileEntry> {
         })
         .collect()
 }
-
