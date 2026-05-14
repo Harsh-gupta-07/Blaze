@@ -1,3 +1,8 @@
+use jwalk::WalkDir;
+
 fn main() {
-    println!("Hello, world!");
+    for entry in WalkDir::new("../"){
+        let entry = entry.unwrap();
+        println!("{}", entry.path().display());
+    }
 }
