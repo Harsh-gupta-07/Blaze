@@ -12,6 +12,7 @@ pub fn initialize_db() -> Result<()> {
         "CREATE TABLE IF NOT EXISTS files (
         id       INTEGER PRIMARY KEY AUTOINCREMENT,
         path     TEXT NOT NULL UNIQUE,
+        parent   TEXT NOT NULL,
         name     TEXT NOT NULL,
         size     INTEGER,
         modified INTEGER,  
@@ -23,7 +24,9 @@ pub fn initialize_db() -> Result<()> {
         ON files(name);
 
         CREATE INDEX IF NOT EXISTS idx_modified
-        ON files(modified);",
+        ON files(modified);
+        
+        CREATE INDEX IF NOT EXISTS idx_parent ON files(parent);",
     )?;
     Ok(())
 }
@@ -39,6 +42,7 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection)->Result<()>{
                 "
                 INSERT OR REPLACE INTO FILES (
                     path,
+                    parent,
                     name,
                     size,
                     modified,
@@ -52,6 +56,7 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection)->Result<()>{
             for file in chunk{
                 stmt.execute(params![
                     &file.path,
+                    &file.parent,
                     &file.name,
                     file.size.map(|v| v as i64),
                     file.modified,
@@ -73,6 +78,7 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
         SELECT
             id,
             path,
+            parent,
             name,
             size,
             modified,
@@ -86,11 +92,12 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
         Ok(FileEntry {
             id: row.get(0)?,
             path: row.get(1)?,
-            name: row.get(2)?,
-            size: row.get::<_, Option<i64>>(3)?.map(|v| v as u64),
-            modified: row.get(4)?,
-            kind: row.get(5)?,
-            indexed: row.get(6)?,
+            parent: row.get(2)?,
+            name: row.get(3)?,
+            size: row.get::<_, Option<i64>>(4)?.map(|v| v as u64),
+            modified: row.get(5)?,
+            kind: row.get(6)?,
+            indexed: row.get(7)?,
         })
     })?;
 

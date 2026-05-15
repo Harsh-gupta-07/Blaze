@@ -2,6 +2,7 @@ use crate::types::FileEntry;
 use jwalk::WalkDir;
 use std::time::UNIX_EPOCH;
 
+// Ignore some dir to reduce point less overhead
 const IGNORED_DIRS: &[&str] = &[
     ".git",
     ".hg",
@@ -36,7 +37,7 @@ fn should_ignore_dir(name: &str) -> bool {
 
 pub fn scan_directory(root: &str) -> Vec<FileEntry> {
     WalkDir::new(root)
-        .parallelism(jwalk::Parallelism::RayonNewPool(0))
+        .parallelism(jwalk::Parallelism::RayonNewPool(0)) 
         .skip_hidden(false)
         .process_read_dir(|_, _, _, children| {
             children.retain(|child| {
@@ -77,6 +78,7 @@ pub fn scan_directory(root: &str) -> Vec<FileEntry> {
             Some(FileEntry {
                 id: None,
                 path: entry.path().to_string_lossy().to_string(),
+                parent: entry.path().parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
                 name: entry.file_name.to_string_lossy().to_string(),
                 size,
                 modified,
