@@ -12,7 +12,7 @@ fn main(){
         }
     }
 
-    let files = Arc::new(walker::scan_directory("."));
+    let files = Arc::new(walker::scan_directory("/"));
 
     let db_files = Arc::clone(&files);
     let db_worker = thread::spawn(move || {
