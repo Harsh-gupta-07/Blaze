@@ -31,8 +31,8 @@ pub fn initialize_db() -> Result<()> {
 
 
 const BATCH_SIZE: usize = 1000;
-pub fn add_files(f: Vec<FileEntry>, conn: &mut Connection)->Result<()>{
-    for chunk in f.chunks(BATCH_SIZE){
+pub fn add_files(files: &[FileEntry], conn: &mut Connection)->Result<()>{
+    for chunk in files.chunks(BATCH_SIZE){
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -51,11 +51,11 @@ pub fn add_files(f: Vec<FileEntry>, conn: &mut Connection)->Result<()>{
 
             for file in chunk{
                 stmt.execute(params![
-                    file.path,
-                    file.name,
+                    &file.path,
+                    &file.name,
                     file.size.map(|v| v as i64),
                     file.modified,
-                    file.kind, 
+                    &file.kind,
                     file.indexed
                 ])?;
             }
@@ -102,4 +102,3 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
 
     Ok(files)
 }
-
