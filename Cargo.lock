@@ -75,10 +75,6 @@ name = "blazefind"
 version = "0.1.0"
 dependencies = [
  "blazefind-core",
- "jwalk",
- "rayon",
- "rusqlite",
- "tantivy",
 ]
 
 [[package]]
