@@ -9,3 +9,6 @@ edition = "2024"
 
 [dependencies]
 blazefind-core = { path = "crates/core" }
+blazefind-daemon = { path = "crates/daemon" }
+crossbeam-channel = "0.5.15"
+

@@ -1,6 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct FileEntry {
-    pub id: Option<i32>,
+    pub id: i64,
     pub path: String,
     pub parent: String,
     pub name: String,

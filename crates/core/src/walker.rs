@@ -1,5 +1,12 @@
 use crate::types::FileEntry;
 use jwalk::WalkDir;
+use std::fs::{FileType, Metadata};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{
+    Hash,
+    Hasher,
+};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 // Ignore some dir to reduce point less overhead
@@ -35,6 +42,57 @@ fn should_ignore_dir(name: &str) -> bool {
     IGNORED_DIRS.contains(&name)
 }
 
+pub fn file_kind(
+    file_type: &FileType,
+) -> &'static str {
+    if file_type.is_file() {
+        "file"
+    } else if file_type.is_dir() {
+        "dir"
+    } else if file_type.is_symlink() {
+        "symlink"
+    } else {
+        "unknown"
+    }
+}
+
+pub fn modified_timestamp(
+    metadata: &Metadata,
+) -> Option<i64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+}
+
+pub fn file_entry_from_path(
+    path: &Path,
+    metadata: &Metadata,
+    kind: &str,
+    indexed: i32,
+) -> Option<FileEntry> {
+    let path_str = path.to_string_lossy().to_string();
+    let parent = path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())?;
+
+    Some(FileEntry {
+        id: generate_id(&path_str),
+        path: path_str,
+        parent,
+        name,
+        size: Some(metadata.len()),
+        modified: modified_timestamp(metadata),
+        kind: kind.to_string(),
+        indexed,
+    })
+}
+
 pub fn scan_directory(root: &str) -> Vec<FileEntry> {
     WalkDir::new(root)
         .parallelism(jwalk::Parallelism::RayonNewPool(0)) 
@@ -53,38 +111,28 @@ pub fn scan_directory(root: &str) -> Vec<FileEntry> {
         .filter_map(|entry| {
             let entry = entry.ok()?;
 
-            let metadata = entry.metadata().ok();
-
-            let size = metadata.as_ref().map(|m| m.len());
-
-            let modified = metadata
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64);
-
+            let metadata = entry.metadata().ok()?;
             let file_type = entry.file_type();
+            let kind = file_kind(&file_type);
 
-            let kind = if file_type.is_file() {
-                "file"
-            } else if file_type.is_dir() {
-                "dir"
-            } else if file_type.is_symlink() {
-                "symlink"
-            } else {
-                "unknown"
-            };
-
-            Some(FileEntry {
-                id: None,
-                path: entry.path().to_string_lossy().to_string(),
-                parent: entry.path().parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
-                name: entry.file_name.to_string_lossy().to_string(),
-                size,
-                modified,
-                kind: kind.to_string(),
-                indexed: 0,
-            })
+            file_entry_from_path(
+                &entry.path(),
+                &metadata,
+                kind,
+                0,
+            )
         })
         .collect()
+}
+
+
+pub fn generate_id(
+    path: &str,
+) -> i64 {
+    let mut hasher =
+        DefaultHasher::new();
+
+    path.hash(&mut hasher);
+
+    hasher.finish() as i64
 }
