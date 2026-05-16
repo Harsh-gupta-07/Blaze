@@ -251,6 +251,15 @@ fn collect_pending_events(
             format!("{:?}", event.kind);
 
         for path in event.paths {
+            if walker::should_ignore_path(&path)
+            {
+                println!(
+                    "[indexer] filtered ignored path {}",
+                    path.to_string_lossy(),
+                );
+                continue;
+            }
+
             flattened.push(PendingPathEvent {
                 action,
                 label: label.clone(),

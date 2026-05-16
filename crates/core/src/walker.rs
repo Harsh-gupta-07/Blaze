@@ -6,7 +6,10 @@ use std::hash::{
     Hash,
     Hasher,
 };
-use std::path::Path;
+use std::path::{
+    Component,
+    Path,
+};
 use std::time::UNIX_EPOCH;
 
 // Ignore some dir to reduce point less overhead
@@ -35,11 +38,27 @@ const IGNORED_DIRS: &[&str] = &[
     "coverage",
     ".gradle",
     ".terraform",
+    ".db",
 ];
 
 
 fn should_ignore_dir(name: &str) -> bool {
     IGNORED_DIRS.contains(&name)
+}
+
+pub fn should_ignore_path(
+    path: &Path,
+) -> bool {
+    path.components().any(|component| {
+        match component {
+            Component::Normal(name) => {
+                should_ignore_dir(
+                    &name.to_string_lossy(),
+                )
+            }
+            _ => false,
+        }
+    })
 }
 
 pub fn file_kind(

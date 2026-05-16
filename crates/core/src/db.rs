@@ -3,7 +3,7 @@ use rusqlite::{Connection, Result, params};
 use crate::{types::FileEntry, walker};
 
 pub fn get_connection() -> Result<Connection> {
-    let conn = Connection::open("./db/main.db")?;
+    let conn = Connection::open("./.db/main.db")?;
 
     conn.execute_batch(
         "
@@ -18,7 +18,7 @@ pub fn get_connection() -> Result<Connection> {
 }
 
 pub fn initialize_db() -> Result<()> {
-    let conn = Connection::open("./db/main.db")?;
+    let conn = Connection::open("./.db/main.db")?;
 
     conn.execute_batch(
         "

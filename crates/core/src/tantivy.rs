@@ -19,12 +19,12 @@ pub struct TantivyState {
 
 pub fn initialize_index(
 ) -> tantivy::Result<TantivyState> {
-    std::fs::create_dir_all("./db/tantivy")
+    std::fs::create_dir_all("./.db/tantivy")
         .unwrap();
 
     let schema = build_schema();
 
-    let index_path = "./db/tantivy";
+    let index_path = "./.db/tantivy";
     let index = open_or_create_index(
         index_path,
         &schema,

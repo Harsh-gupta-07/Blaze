@@ -8,6 +8,8 @@ use notify::{
     Watcher,
 };
 
+use blazefind_core::walker;
+
 use std::path::Path;
 
 pub fn start_watcher(
@@ -24,6 +26,28 @@ pub fn start_watcher(
             move |res: notify::Result<Event>| {
                 match res {
                     Ok(event) => {
+                        let ignored_paths =
+                            event
+                                .paths
+                                .iter()
+                                .filter(|path| {
+                                    walker::should_ignore_path(
+                                        path,
+                                    )
+                                })
+                                .count();
+
+                        if ignored_paths
+                            == event.paths.len()
+                        {
+                            println!(
+                                "[watcher] ignored {:?} (all {} paths filtered)",
+                                event.kind,
+                                ignored_paths,
+                            );
+                            return;
+                        }
+
                         println!(
                             "[watcher] event {:?} ({} paths)",
                             event.kind,

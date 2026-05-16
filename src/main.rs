@@ -4,7 +4,7 @@ use crossbeam_channel::bounded;
 
 use std::{process, sync::Arc, thread};
 
-const WATCH_ROOT: &str = "./crates";
+const WATCH_ROOT: &str = "/Users";
 
 fn main() {
     println!(
