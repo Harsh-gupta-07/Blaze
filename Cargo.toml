@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core","crates/daemon","crates/ui"]
+members = ["crates/core", "crates/daemon", "crates/ui", "src-tauri"]
 resolver = "2"
 
 [package]
@@ -11,4 +11,3 @@ edition = "2024"
 blaze-core = { path = "crates/core" }
 blaze-daemon = { path = "crates/daemon" }
 crossbeam-channel = "0.5.15"
-

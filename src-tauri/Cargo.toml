@@ -1,0 +1,21 @@
+[package]
+name = "blaze-tauri"
+version = "0.1.0"
+description = "BlazeFind desktop shell"
+authors = ["Harsh"]
+license = ""
+repository = ""
+edition = "2024"
+
+[lib]
+name = "blaze_tauri"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+blaze-core = { path = "../crates/core" }
+blaze-daemon = { path = "../crates/daemon" }
+crossbeam-channel = "0.5.15"
+tauri = { version = "2", features = [] }
