@@ -8,7 +8,7 @@ use notify::{
     Watcher,
 };
 
-use blazefind_core::walker;
+use blaze_core::walker;
 
 use std::path::Path;
 

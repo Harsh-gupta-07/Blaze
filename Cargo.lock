@@ -71,16 +71,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "blazefind"
+name = "blaze"
 version = "0.1.0"
 dependencies = [
- "blazefind-core",
- "blazefind-daemon",
+ "blaze-core",
+ "blaze-daemon",
  "crossbeam-channel",
 ]
 
 [[package]]
-name = "blazefind-core"
+name = "blaze-core"
 version = "0.1.0"
 dependencies = [
  "jwalk",
@@ -89,17 +89,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "blazefind-daemon"
+name = "blaze-daemon"
 version = "0.1.0"
 dependencies = [
- "blazefind-core",
+ "blaze-core",
  "crossbeam-channel",
  "notify",
  "rusqlite",
 ]
 
 [[package]]
-name = "blazefind-ui"
+name = "blaze-ui"
 version = "0.1.0"
 
 [[package]]

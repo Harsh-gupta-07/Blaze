@@ -3,12 +3,12 @@ members = ["crates/core","crates/daemon","crates/ui"]
 resolver = "2"
 
 [package]
-name = "blazefind"
+name = "blaze"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-blazefind-core = { path = "crates/core" }
-blazefind-daemon = { path = "crates/daemon" }
+blaze-core = { path = "crates/core" }
+blaze-daemon = { path = "crates/daemon" }
 crossbeam-channel = "0.5.15"
 

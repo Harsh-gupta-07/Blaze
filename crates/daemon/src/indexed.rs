@@ -5,7 +5,7 @@ use crossbeam_channel::{
 
 use notify::{Event, EventKind};
 
-use blazefind_core::{db, tantivy, walker};
+use blaze_core::{db, tantivy, walker};
 
 use rusqlite::Connection;
 

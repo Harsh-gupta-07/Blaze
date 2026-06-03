@@ -1,5 +1,5 @@
 [package]
-name = "blazefind-daemon"
+name = "blaze-daemon"
 version = "0.1.0"
 edition = "2024"
 
@@ -10,4 +10,4 @@ path = "src/lib.rs"
 notify = "8.2.0"
 crossbeam-channel = "0.5.15"
 rusqlite = "0.39.0"
-blazefind-core = {path = "../core"}
+blaze-core = {path = "../core"}

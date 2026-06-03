@@ -1,10 +1,10 @@
-use blazefind_core::{db, tantivy, walker};
-use blazefind_daemon::{indexed, watcher};
+use blaze_core::{db, tantivy, walker};
+use blaze_daemon::{indexed, watcher};
 use crossbeam_channel::bounded;
 
 use std::{process, sync::Arc, thread};
 
-const WATCH_ROOT: &str = "/Users";
+const WATCH_ROOT: &str = ".";
 
 fn main() {
     println!(
