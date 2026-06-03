@@ -5,7 +5,7 @@ description = "BlazeFind desktop shell"
 authors = ["Harsh"]
 license = ""
 repository = ""
-edition = "2024"
+edition = "2021"
 
 [lib]
 name = "blaze_tauri"
@@ -18,4 +18,5 @@ tauri-build = { version = "2", features = [] }
 blaze-core = { path = "../crates/core" }
 blaze-daemon = { path = "../crates/daemon" }
 crossbeam-channel = "0.5.15"
+serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }

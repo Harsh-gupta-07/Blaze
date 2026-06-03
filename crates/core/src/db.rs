@@ -1,9 +1,36 @@
 use rusqlite::{Connection, Result, params};
 
 use crate::{types::FileEntry, walker};
+use std::{env, fs, path::PathBuf};
+
+fn db_path() -> PathBuf {
+    if let Ok(path) = env::var("BLAZE_DB_PATH") {
+        return PathBuf::from(path);
+    }
+
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let candidates = [
+        cwd.join(".db/main.db"),
+        cwd.join("../.db/main.db"),
+    ];
+
+    for candidate in candidates {
+        if candidate.parent().is_some_and(|parent| parent.exists()) {
+            return candidate;
+        }
+    }
+
+    cwd.join(".db/main.db")
+}
 
 pub fn get_connection() -> Result<Connection> {
-    let conn = Connection::open("./.db/main.db")?;
+    let path = db_path();
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let conn = Connection::open(path)?;
 
     conn.execute_batch(
         "
@@ -18,7 +45,13 @@ pub fn get_connection() -> Result<Connection> {
 }
 
 pub fn initialize_db() -> Result<()> {
-    let conn = Connection::open("./.db/main.db")?;
+    let path = db_path();
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let conn = Connection::open(path)?;
 
     conn.execute_batch(
         "
@@ -161,7 +194,6 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
         JOIN directories
             ON files.directory_id = directories.id
         ORDER BY files.id DESC
-        limit 100
         ",
     )?;
 

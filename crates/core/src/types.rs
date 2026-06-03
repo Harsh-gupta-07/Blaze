@@ -1,4 +1,5 @@
-#[derive(Debug, Clone)]
+use serde::Serialize;
+#[derive(Debug, Clone,Serialize)]
 pub struct FileEntry {
     pub id: i64,
     pub path: String,
