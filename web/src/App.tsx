@@ -18,7 +18,7 @@ type AppProps = {
 export default function App({ invoke }: AppProps) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [path, setPath] = useState<string>("/users");
+  const [path, setPath] = useState<string>("/Users");
 
   useEffect(() => {
     let alive = true;

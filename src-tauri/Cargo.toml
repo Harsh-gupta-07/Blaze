@@ -1,7 +1,7 @@
 [package]
 name = "blaze-tauri"
 version = "0.1.0"
-description = "BlazeFind desktop shell"
+description = "Blaze desktop shell"
 authors = ["Harsh"]
 license = ""
 repository = ""
