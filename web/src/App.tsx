@@ -18,14 +18,18 @@ type AppProps = {
 export default function App({ invoke }: AppProps) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [path, setPath] = useState<string>("/users");
 
   useEffect(() => {
     let alive = true;
 
-    invoke<FileEntry[]>("fetch_files")
+    setError(null);
+    setFiles([]);
+
+    invoke<FileEntry[]>("fetch_dir", {"path": path})
       .then((result) => {
         if (alive) {
-          console.log(result)
+          console.log(path,result)
           setFiles(result);
         }
       })
@@ -38,13 +42,19 @@ export default function App({ invoke }: AppProps) {
     return () => {
       alive = false;
     };
-  }, [invoke]);
+  }, [invoke, path]);
+
+  function handle(file: FileEntry) {
+    if (file.kind === "dir") {
+      setPath(file.path);
+    }
+  }
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#050b14] text-slate-100">
       <div className="relative mx-auto min-h-screen w-full max-w-5xl px-6 py-10 sm:px-8">
         <div className="mb-8">
-          <p className="text-xs uppercase tracking-[0.45em] text-cyan-200/70">
+          <p className="text-xs uppercase tracking-[0.45em] text-cyan-200/70" onClick={()=>setPath("/")}>
             BlazeFind
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
@@ -64,9 +74,10 @@ export default function App({ invoke }: AppProps) {
 
         <div className="grid gap-4">
           {files.map((file) => (
-            <article
+            <button
               key={file.id}
-              className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur"
+              className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur cursor-pointer"
+              onClick={()=>{handle(file)}}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -108,7 +119,7 @@ export default function App({ invoke }: AppProps) {
                   <dd className="mt-1">{file.indexed}</dd>
                 </div>
               </dl>
-            </article>
+            </button>
           ))}
         </div>
       </div>

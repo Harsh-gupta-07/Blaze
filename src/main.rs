@@ -1,10 +1,16 @@
+#[allow(unused_imports)]
 use blaze_core::{db, tantivy, walker};
+#[allow(unused_imports)]
 use blaze_daemon::{indexed, watcher};
+#[allow(unused_imports)]
 use crossbeam_channel::bounded;
-
+#[allow(unused_imports)]
+use core::alloc;
+#[allow(unused_imports)]
 use std::{process, sync::Arc, thread};
 
-const WATCH_ROOT: &str = ".";
+#[allow(dead_code)]
+const WATCH_ROOT: &str = "/";
 
 fn main() {
     println!(

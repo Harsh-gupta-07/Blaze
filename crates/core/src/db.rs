@@ -3,16 +3,23 @@ use rusqlite::{Connection, Result, params};
 use crate::{types::FileEntry, walker};
 use std::{env, fs, path::PathBuf};
 
+fn join_path(parent: &str, name: &str) -> String {
+    if parent.is_empty() {
+        name.to_string()
+    } else if parent == "/" {
+        format!("/{}", name)
+    } else {
+        format!("{}/{}", parent, name)
+    }
+}
+
 fn db_path() -> PathBuf {
     if let Ok(path) = env::var("BLAZE_DB_PATH") {
         return PathBuf::from(path);
     }
 
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let candidates = [
-        cwd.join(".db/main.db"),
-        cwd.join("../.db/main.db"),
-    ];
+    let candidates = [cwd.join(".db/main.db"), cwd.join("../.db/main.db")];
 
     for candidate in candidates {
         if candidate.parent().is_some_and(|parent| parent.exists()) {
@@ -96,10 +103,7 @@ pub fn initialize_db() -> Result<()> {
 
 const BATCH_SIZE: usize = 1000;
 pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
-    println!(
-        "[db] bulk indexing {} entries",
-        files.len(),
-    );
+    println!("[db] bulk indexing {} entries", files.len(),);
 
     for chunk in files.chunks(BATCH_SIZE) {
         let tx = conn.transaction()?;
@@ -170,10 +174,7 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
 
         tx.commit()?;
 
-        println!(
-            "[db] committed bulk chunk of {} entries",
-            chunk.len(),
-        );
+        println!("[db] committed bulk chunk of {} entries", chunk.len(),);
     }
 
     Ok(())
@@ -194,6 +195,7 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
         JOIN directories
             ON files.directory_id = directories.id
         ORDER BY files.id DESC
+        LIMIT 100
         ",
     )?;
 
@@ -204,7 +206,7 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
         Ok(FileEntry {
             id: row.get(0)?,
 
-            path: format!("{}/{}", parent, name),
+            path: join_path(&parent, &name),
 
             parent,
 
@@ -229,13 +231,62 @@ pub fn get_files(conn: &Connection) -> Result<Vec<FileEntry>> {
     Ok(files)
 }
 
-// pub fn get_connection(
-// ) -> Result<Connection> {
-//     let conn =
-//         Connection::open("./db/main.db")?;
+pub fn get_dir_files(conn: &Connection, path: String) -> Result<Vec<FileEntry>> {
+    let path = {
+        let trimmed = path.trim_end_matches(['/', '\\']);
 
-//     Ok(conn)
-// }
+        if trimmed.is_empty() {
+            "/".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    };
+
+    let mut entries = Vec::new();
+
+    let mut file_stmt = conn.prepare(
+        "
+        SELECT
+            files.id,
+            directories.path,
+            files.name,
+            files.size,
+            files.modified,
+            files.kind,
+            files.indexed
+        FROM files
+        JOIN directories
+            ON files.directory_id = directories.id
+        WHERE directories.path = ?1
+        ORDER BY files.id DESC
+        ",
+    )?;
+
+    let file_iter = file_stmt.query_map(params![&path], |row| {
+        let parent: String = row.get(1)?;
+        let name: String = row.get(2)?;
+
+        Ok(FileEntry {
+            id: row.get(0)?,
+            path: join_path(&parent, &name),
+            parent,
+            name,
+            size: row.get::<_, Option<i64>>(3)?.map(|v| v as u64),
+            modified: row.get(4)?,
+            kind: row.get(5)?,
+            indexed: row.get(6)?,
+        })
+    })?;
+
+    for file in file_iter {
+        entries.push(file?);
+    }
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.kind.cmp(&b.kind)));
+
+    // eprintln!("{:?}", entries);
+    Ok(entries)
+}
 
 pub fn upsert_file(conn: &Connection, file: &FileEntry) -> Result<()> {
     let parent_id = walker::generate_id(&file.parent);
@@ -292,11 +343,7 @@ pub fn upsert_file(conn: &Connection, file: &FileEntry) -> Result<()> {
         ],
     )?;
 
-    println!(
-        "[db] upserted {} ({})",
-        file.path,
-        file.kind,
-    );
+    println!("[db] upserted {} ({})", file.path, file.kind,);
 
     Ok(())
 }
@@ -317,11 +364,7 @@ pub fn delete_file(conn: &Connection, parent: &str, name: &str) -> Result<()> {
         params![parent, name,],
     )?;
 
-    println!(
-        "[db] deleted file {}/{}",
-        parent,
-        name,
-    );
+    println!("[db] deleted file {}/{}", parent, name,);
 
     Ok(())
 }
@@ -339,10 +382,7 @@ pub fn get_subtree_paths(conn: &Connection, path: &str) -> Result<Vec<String>> {
         ",
     )?;
 
-    let path_iter = stmt.query_map(
-        params![path, format!("{}/%", path)],
-        |row| row.get(0),
-    )?;
+    let path_iter = stmt.query_map(params![path, format!("{}/%", path)], |row| row.get(0))?;
 
     let mut paths = Vec::new();
 
@@ -350,11 +390,7 @@ pub fn get_subtree_paths(conn: &Connection, path: &str) -> Result<Vec<String>> {
         paths.push(entry?);
     }
 
-    println!(
-        "[db] loaded {} subtree paths for {}",
-        paths.len(),
-        path,
-    );
+    println!("[db] loaded {} subtree paths for {}", paths.len(), path,);
 
     Ok(paths)
 }
@@ -384,10 +420,7 @@ pub fn delete_directory_recursive(conn: &Connection, path: &str) -> Result<()> {
         params![path, format!("{}/%", path),],
     )?;
 
-    println!(
-        "[db] deleted directory subtree {}",
-        path,
-    );
+    println!("[db] deleted directory subtree {}", path,);
 
     Ok(())
 }
