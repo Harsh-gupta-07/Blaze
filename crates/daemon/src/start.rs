@@ -109,16 +109,29 @@ async fn run_startup() {
     // Return immediately; the tasks run in background.
 }
 
-/// Full filesystem walk + index rebuild.
+/// Full filesystem walk + index rebuild, with a
+/// generation-based sweep to purge files that were
+/// deleted while Blaze was offline.
 fn cold_bootstrap() {
-    println!("[daemon] scanning {} for bootstrap index", WATCH_ROOT);
+    // Pick a generation stamp for this boot.
+    let generation = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("System clock before UNIX epoch")
+        .as_secs() as i64;
+
+    println!(
+        "[daemon] scanning {} for bootstrap index (generation {})",
+        WATCH_ROOT, generation,
+    );
+
     let files = Arc::new(walker::scan_directory(WATCH_ROOT));
     println!("[daemon] bootstrap scan found {} entries", files.len());
 
+    // ---- Parallel DB + Tantivy upsert ----
     let db_files = Arc::clone(&files);
     let db_worker = thread::spawn(move || {
         let mut conn = db::get_connection()?;
-        db::add_files(db_files.as_ref(), &mut conn)
+        db::add_files(db_files.as_ref(), &mut conn, generation)
     });
 
     let index_files = Arc::clone(&files);
@@ -129,7 +142,9 @@ fn cold_bootstrap() {
             process::exit(1);
         }
     };
-    let index_worker = thread::spawn(move || tantivy::make_index(index_files.as_ref(), &mut tanti));
+    let index_worker = thread::spawn(move || {
+        tantivy::make_index(index_files.as_ref(), &mut tanti)
+    });
 
     match db_worker.join() {
         Ok(Ok(_)) => println!("[daemon] bootstrap SQLite index complete"),
@@ -142,4 +157,58 @@ fn cold_bootstrap() {
         Ok(Err(err)) => eprintln!("Failed to create Tantivy index: {}", err),
         Err(_) => eprintln!("Index worker panicked"),
     }
+
+    // ---- Sweep stale rows ----
+    // Any file in the DB whose generation < this boot's
+    // generation was not seen during the scan → deleted.
+    let conn = match db::get_connection() {
+        Ok(c) => c,
+        Err(err) => {
+            eprintln!("[daemon] sweep: failed to connect to DB: {}", err);
+            return;
+        }
+    };
+
+    let stale_paths = match db::get_stale_paths(&conn, generation) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("[daemon] sweep: failed to query stale paths: {}", err);
+            return;
+        }
+    };
+
+    if stale_paths.is_empty() {
+        println!("[daemon] sweep: no stale files to remove");
+        return;
+    }
+
+    println!(
+        "[daemon] sweep: found {} stale files to purge",
+        stale_paths.len(),
+    );
+
+    // Remove from SQLite (+ empty directories).
+    if let Err(err) = db::delete_stale_files(&conn, generation) {
+        eprintln!("[daemon] sweep: failed to delete stale rows: {}", err);
+        return;
+    }
+
+    // Remove from Tantivy.
+    match tantivy::initialize_index() {
+        Ok(mut tanti) => {
+            tantivy::delete_documents(&mut tanti, &stale_paths);
+            if let Err(err) = tantivy::commit(&mut tanti) {
+                eprintln!("[daemon] sweep: Tantivy commit failed: {}", err);
+            } else {
+                println!(
+                    "[daemon] sweep: purged {} deleted files from Tantivy",
+                    stale_paths.len(),
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("[daemon] sweep: failed to open Tantivy: {}", err);
+        }
+    }
 }
+

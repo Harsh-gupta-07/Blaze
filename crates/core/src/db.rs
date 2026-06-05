@@ -77,6 +77,7 @@ pub fn initialize_db() -> Result<()> {
                 modified     INTEGER,
                 kind         TEXT,
                 indexed      INTEGER DEFAULT 0,
+                generation   INTEGER NOT NULL DEFAULT 0,
 
                 FOREIGN KEY(directory_id)
                 REFERENCES directories(id)
@@ -107,8 +108,8 @@ pub fn initialize_db() -> Result<()> {
 }
 
 const BATCH_SIZE: usize = 1000;
-pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
-    println!("[db] bulk indexing {} entries", files.len(),);
+pub fn add_files(files: &[FileEntry], conn: &mut Connection, generation: i64) -> Result<()> {
+    println!("[db] bulk indexing {} entries (generation {})", files.len(), generation);
 
     for chunk in files.chunks(BATCH_SIZE) {
         let tx = conn.transaction()?;
@@ -140,9 +141,10 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
                     size,
                     modified,
                     kind,
-                    indexed
+                    indexed,
+                    generation
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
 
                 ON CONFLICT(directory_id, name)
                 DO UPDATE SET
@@ -150,7 +152,8 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
                     size = excluded.size,
                     modified = excluded.modified,
                     kind = excluded.kind,
-                    indexed = excluded.indexed
+                    indexed = excluded.indexed,
+                    generation = excluded.generation
                 ",
             )?;
 
@@ -173,6 +176,7 @@ pub fn add_files(files: &[FileEntry], conn: &mut Connection) -> Result<()> {
                     file.modified,
                     &file.kind,
                     file.indexed,
+                    generation,
                 ])?;
             }
         }
@@ -325,9 +329,10 @@ pub fn upsert_file(conn: &Connection, file: &FileEntry) -> Result<()> {
             size,
             modified,
             kind,
-            indexed
+            indexed,
+            generation
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s','now'))
 
         ON CONFLICT(directory_id, name)
         DO UPDATE SET
@@ -335,7 +340,8 @@ pub fn upsert_file(conn: &Connection, file: &FileEntry) -> Result<()> {
             size = excluded.size,
             modified = excluded.modified,
             kind = excluded.kind,
-            indexed = excluded.indexed
+            indexed = excluded.indexed,
+            generation = excluded.generation
         ",
         params![
             file.id,
@@ -474,4 +480,67 @@ pub fn set_metadata(conn: &Connection, key: &str, value: &str) -> Result<()> {
     println!("[db] set metadata {} = {}", key, value);
 
     Ok(())
+}
+
+/// Return full paths of every file whose generation is
+/// older than `current_gen` — i.e. files that were NOT
+/// seen during the latest cold-bootstrap scan and are
+/// therefore assumed deleted.
+pub fn get_stale_paths(
+    conn: &Connection,
+    current_gen: i64,
+) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "
+        SELECT
+            directories.path || '/' || files.name AS full_path
+        FROM files
+        JOIN directories
+            ON files.directory_id = directories.id
+        WHERE files.generation < ?1
+        ",
+    )?;
+
+    let rows = stmt.query_map(params![current_gen], |row| {
+        row.get::<_, String>(0)
+    })?;
+
+    let mut paths = Vec::new();
+    for row in rows {
+        paths.push(row?);
+    }
+
+    Ok(paths)
+}
+
+/// Delete every file row whose generation is older than
+/// `current_gen`, then clean up any directories that no
+/// longer contain files.  Returns the number of file
+/// rows removed.
+pub fn delete_stale_files(
+    conn: &Connection,
+    current_gen: i64,
+) -> Result<usize> {
+    let removed = conn.execute(
+        "DELETE FROM files WHERE generation < ?1",
+        params![current_gen],
+    )?;
+
+    // Prune empty directories.
+    conn.execute(
+        "
+        DELETE FROM directories
+        WHERE id NOT IN (
+            SELECT DISTINCT directory_id FROM files
+        )
+        ",
+        [],
+    )?;
+
+    println!(
+        "[db] swept {} stale file rows (generation < {})",
+        removed, current_gen,
+    );
+
+    Ok(removed)
 }

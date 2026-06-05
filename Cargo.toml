@@ -10,4 +10,3 @@ edition = "2024"
 [dependencies]
 blaze-core = { path = "crates/core" }
 blaze-daemon = { path = "crates/daemon" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
