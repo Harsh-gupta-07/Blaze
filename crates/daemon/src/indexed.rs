@@ -1,9 +1,6 @@
-use crossbeam_channel::{
-    Receiver,
-    RecvTimeoutError,
-};
+use fsevent_stream::stream::Event;
 
-use notify::{Event, EventKind};
+use tokio::sync::mpsc::Receiver;
 
 use blaze_core::{db, tantivy, walker};
 
@@ -29,7 +26,20 @@ struct PendingPathEvent {
     path: PathBuf,
 }
 
-pub fn run_indexer(rx: Receiver<Event>) {
+/// Run the live indexer loop.
+///
+/// Receives `FsEvent`s from the watcher via a tokio mpsc channel,
+/// batches them with a 50 ms window, de-duplicates by path, and
+/// applies each change to SQLite + Tantivy.
+///
+/// After each batch the latest FSEvents event-ID is persisted to the
+/// DB `metadata` table so the watcher can resume from that point
+/// after a restart.
+///
+/// This function is meant to be called from
+/// `tokio::task::spawn_blocking` because it performs blocking I/O
+/// (SQLite, Tantivy) and uses `blocking_recv` on the channel.
+pub fn run_indexer(mut rx: Receiver<Event>) {
     println!("[indexer] starting");
 
     let conn = match db::get_connection() {
@@ -55,16 +65,15 @@ pub fn run_indexer(rx: Receiver<Event>) {
             }
         };
 
-    let mut buffer = Vec::new();
+    let mut buffer: Vec<Event> = Vec::new();
 
     loop {
-        let first = match rx.recv() {
-            Ok(event) => event,
-
-            Err(err) => {
+        // Block until the first event arrives.
+        let first = match rx.blocking_recv() {
+            Some(event) => event,
+            None => {
                 eprintln!(
-                    "Indexer channel closed: {}",
-                    err,
+                    "Indexer channel closed; shutting down.",
                 );
                 break;
             }
@@ -72,26 +81,30 @@ pub fn run_indexer(rx: Receiver<Event>) {
 
         buffer.push(first);
 
+        // Drain the channel for up to 50 ms to coalesce
+        // rapid bursts into a single batch.
         let deadline =
             Instant::now()
                 + Duration::from_millis(50);
 
         let mut disconnected = false;
 
-        while let Some(remaining) = deadline
-            .checked_duration_since(Instant::now())
-        {
-            match rx.recv_timeout(remaining) {
+        while Instant::now() < deadline {
+            match rx.try_recv() {
                 Ok(event) => {
                     buffer.push(event);
                 }
 
                 Err(
-                    RecvTimeoutError::Timeout,
-                ) => break,
+                    tokio::sync::mpsc::error::TryRecvError::Empty,
+                ) => {
+                    std::thread::sleep(
+                        Duration::from_millis(5),
+                    );
+                }
 
                 Err(
-                    RecvTimeoutError::Disconnected,
+                    tokio::sync::mpsc::error::TryRecvError::Disconnected,
                 ) => {
                     disconnected = true;
                     break;
@@ -104,17 +117,25 @@ pub fn run_indexer(rx: Receiver<Event>) {
                 &mut buffer,
             );
 
+        // Track the highest event ID in this batch so
+        // we can persist it as the resume checkpoint.
+        let max_event_id: u64 = pending_events
+            .iter()
+            .map(|e| e.event_id)
+            .max()
+            .unwrap_or(0);
+
         println!(
-            "[indexer] processing batch of {} events ({} unique paths)",
+            "[indexer] processing batch of {} unique paths (max event ID: {})",
             pending_events.len(),
-            pending_events.len(),
+            max_event_id,
         );
 
         for event in pending_events {
             if let Err(err) = process_event(
                 &conn,
                 &mut tantivy,
-                event,
+                event.inner,
             ) {
                 eprintln!(
                     "Failed to process fs event: {}",
@@ -130,6 +151,21 @@ pub fn run_indexer(rx: Receiver<Event>) {
                 "Failed to commit Tantivy batch: {}",
                 err,
             );
+        }
+
+        // Persist the checkpoint so the watcher can
+        // resume from this event ID after a restart.
+        if max_event_id > 0 {
+            if let Err(err) = db::set_metadata(
+                &conn,
+                "last_fsevent_id",
+                &max_event_id.to_string(),
+            ) {
+                eprintln!(
+                    "Failed to persist event ID checkpoint: {}",
+                    err,
+                );
+            }
         }
 
         if disconnected {
@@ -239,42 +275,53 @@ fn process_event(
     Ok(())
 }
 
+struct PendingPathEventWithId {
+    inner: PendingPathEvent,
+    event_id: u64,
+}
+
+/// Flatten a buffer of raw `FsEvent`s into a deduplicated
+/// list of actionable path events, keeping only the latest
+/// action per path.
 fn collect_pending_events(
     buffer: &mut Vec<Event>,
-) -> Vec<PendingPathEvent> {
-    let mut flattened = Vec::new();
+) -> Vec<PendingPathEventWithId> {
+    let mut flattened: Vec<PendingPathEventWithId> = Vec::new();
 
     for event in buffer.drain(..) {
         let action =
-            classify_event_kind(&event.kind);
+            classify_fsevent_flags(event.raw_flags);
         let label =
-            format!("{:?}", event.kind);
+            format!("flags={:x}", event.raw_flags);
+        let path = event.path.clone();
 
-        for path in event.paths {
-            if walker::should_ignore_path(&path)
-            {
-                println!(
-                    "[indexer] filtered ignored path {}",
-                    path.to_string_lossy(),
-                );
-                continue;
-            }
-
-            flattened.push(PendingPathEvent {
-                action,
-                label: label.clone(),
-                path,
-            });
+        if walker::should_ignore_path(&path)
+        {
+            println!(
+                "[indexer] filtered ignored path {}",
+                path.to_string_lossy(),
+            );
+            continue;
         }
+
+        flattened.push(PendingPathEventWithId {
+            inner: PendingPathEvent {
+                action,
+                label,
+                path,
+            },
+            event_id: event.id,
+        });
     }
 
     let original_count = flattened.len();
     let mut seen = HashSet::new();
-    let mut deduped = Vec::new();
+    let mut deduped: Vec<PendingPathEventWithId> = Vec::new();
 
+    // Walk backwards so we keep the *latest* action for each path.
     for event in flattened.into_iter().rev() {
         let key =
-            event.path.to_string_lossy().to_string();
+            event.inner.path.to_string_lossy().to_string();
 
         if seen.insert(key) {
             deduped.push(event);
@@ -294,18 +341,26 @@ fn collect_pending_events(
     deduped
 }
 
-fn classify_event_kind(
-    kind: &EventKind,
+// Use raw flag bits directly for classification to avoid
+// depending on the exact bitflags version re-exported by
+// fsevent-stream.
+const ITEM_REMOVED: u32 = 0x0000_0200;
+const ITEM_CREATED: u32 = 0x0000_0100;
+const ITEM_MODIFIED: u32 = 0x0000_1000;
+const ITEM_RENAMED: u32 = 0x0000_0800;
+
+fn classify_fsevent_flags(
+    raw_flags: u32,
 ) -> ActionHint {
-    match kind {
-        EventKind::Create(_)
-        | EventKind::Modify(_) => {
-            ActionHint::SyncPath
-        }
-        EventKind::Remove(_) => {
-            ActionHint::Remove
-        }
-        _ => ActionHint::Ignore,
+    if raw_flags & ITEM_REMOVED != 0 {
+        ActionHint::Remove
+    } else if raw_flags
+        & (ITEM_CREATED | ITEM_MODIFIED | ITEM_RENAMED)
+        != 0
+    {
+        ActionHint::SyncPath
+    } else {
+        ActionHint::Ignore
     }
 }
 

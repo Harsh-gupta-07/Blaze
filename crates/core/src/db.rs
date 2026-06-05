@@ -82,6 +82,11 @@ pub fn initialize_db() -> Result<()> {
                 REFERENCES directories(id)
             );
 
+            CREATE TABLE IF NOT EXISTS metadata (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_file
             ON files(directory_id, name);
 
@@ -444,4 +449,29 @@ pub fn is_directory(conn: &Connection, parent: &str, name: &str) -> Result<bool>
     )?;
 
     Ok(result == "dir")
+}
+
+pub fn get_metadata(conn: &Connection, key: &str) -> Result<Option<String>> {
+    let result = conn.query_row(
+        "SELECT value FROM metadata WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    );
+
+    match result {
+        Ok(val) => Ok(Some(val)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+pub fn set_metadata(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata(key, value) VALUES(?1, ?2)",
+        params![key, value],
+    )?;
+
+    println!("[db] set metadata {} = {}", key, value);
+
+    Ok(())
 }

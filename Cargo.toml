@@ -4,10 +4,10 @@ resolver = "2"
 
 [package]
 name = "blaze"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
 blaze-core = { path = "crates/core" }
 blaze-daemon = { path = "crates/daemon" }
-crossbeam-channel = "0.5.15"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }

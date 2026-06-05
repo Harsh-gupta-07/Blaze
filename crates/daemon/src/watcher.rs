@@ -1,89 +1,78 @@
-use crossbeam_channel::Sender;
+use std::path::Path;
+use std::time::Duration;
 
-use notify::{
-    Config,
-    Event,
-    RecommendedWatcher,
-    RecursiveMode,
-    Watcher,
+use fsevent_stream::ffi::{
+    kFSEventStreamCreateFlagFileEvents,
+    kFSEventStreamCreateFlagNoDefer,
+    kFSEventStreamCreateFlagUseCFTypes,
+    kFSEventStreamCreateFlagUseExtendedData,
+    kFSEventStreamEventIdSinceNow,
+    FSEventStreamEventId,
 };
+use fsevent_stream::stream::{
+    create_event_stream, Event,
+};
+use futures_util::StreamExt;
+use tokio::sync::mpsc::Sender;
 
 use blaze_core::walker;
 
-use std::path::Path;
+/// Sentinel value: start streaming from "now", ignoring
+/// all historical events.
+pub const SINCE_NOW: FSEventStreamEventId =
+    kFSEventStreamEventIdSinceNow;
 
-pub fn start_watcher(
+/// Start an FSEvents stream on `root` that replays every
+/// event whose ID > `since`, then continues in real-time.
+///
+/// Events for ignored paths (see `walker::should_ignore_path`)
+/// are silently dropped before they reach the channel.
+pub async fn start_watcher(
     root: &str,
+    since: FSEventStreamEventId,
     tx: Sender<Event>,
-) -> notify::Result<()> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+{
     println!(
-        "[watcher] starting recursive watch on {}",
-        root,
+        "[watcher] starting FSEvents watch on {} (since event ID: {})",
+        root, since,
     );
 
-    let mut watcher =
-        RecommendedWatcher::new(
-            move |res: notify::Result<Event>| {
-                match res {
-                    Ok(event) => {
-                        let ignored_paths =
-                            event
-                                .paths
-                                .iter()
-                                .filter(|path| {
-                                    walker::should_ignore_path(
-                                        path,
-                                    )
-                                })
-                                .count();
-
-                        if ignored_paths
-                            == event.paths.len()
-                        {
-                            println!(
-                                "[watcher] ignored {:?} (all {} paths filtered)",
-                                event.kind,
-                                ignored_paths,
-                            );
-                            return;
-                        }
-
-                        println!(
-                            "[watcher] event {:?} ({} paths)",
-                            event.kind,
-                            event.paths.len(),
-                        );
-                        if let Err(err) =
-                            tx.send(event)
-                        {
-                            eprintln!(
-                                "Failed to forward fs event: {}",
-                                err,
-                            );
-                        }
-                    }
-
-                    Err(err) => {
-                        eprintln!(
-                            "Watcher error: {}",
-                            err,
-                        );
-                    }
-                }
-            },
-            Config::default(),
-        )?;
-
-    watcher.watch(
-        Path::new(root),
-        RecursiveMode::Recursive,
+    let (stream, _handler) = create_event_stream(
+        [Path::new(root)],
+        since,
+        Duration::from_millis(200),
+        kFSEventStreamCreateFlagNoDefer
+            | kFSEventStreamCreateFlagFileEvents
+            | kFSEventStreamCreateFlagUseExtendedData
+            | kFSEventStreamCreateFlagUseCFTypes,
     )?;
 
+    let mut stream = stream.into_flatten();
+
     println!(
-        "[watcher] watch registered successfully",
+        "[watcher] FSEvents stream registered successfully",
     );
 
-    loop {
-        std::thread::park();
+    while let Some(event) = stream.next().await {
+        if walker::should_ignore_path(&event.path) {
+            continue;
+        }
+
+        println!(
+            "[watcher] event {} flags={:x} path={}",
+            event.id,
+            event.raw_flags,
+            event.path.display(),
+        );
+
+        if tx.send(event).await.is_err() {
+            eprintln!(
+                "[watcher] indexer channel closed, stopping",
+            );
+            break;
+        }
     }
+
+    Ok(())
 }
