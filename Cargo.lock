@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "blaze"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blaze-core",
  "blaze-daemon",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "blaze-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jwalk",
  "rusqlite",
@@ -180,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "blaze-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blaze-core",
  "fsevent-stream",
@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "blaze-tauri"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "blaze-core",
  "blaze-daemon",
