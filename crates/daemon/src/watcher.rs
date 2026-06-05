@@ -14,6 +14,7 @@ use fsevent_stream::stream::{
 };
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::watch;
 
 use blaze_core::walker;
 
@@ -25,12 +26,18 @@ pub const SINCE_NOW: FSEventStreamEventId =
 /// Start an FSEvents stream on `root` that replays every
 /// event whose ID > `since`, then continues in real-time.
 ///
+/// The stream runs until one of:
+///   - `shutdown_rx` is signalled (graceful shutdown)
+///   - the indexer's channel is full / closed
+///   - the FSEvents stream ends (shouldn't happen)
+///
 /// Events for ignored paths (see `walker::should_ignore_path`)
 /// are silently dropped before they reach the channel.
 pub async fn start_watcher(
     root: &str,
     since: FSEventStreamEventId,
     tx: Sender<Event>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 {
     println!(
@@ -54,25 +61,50 @@ pub async fn start_watcher(
         "[watcher] FSEvents stream registered successfully",
     );
 
-    while let Some(event) = stream.next().await {
-        if walker::should_ignore_path(&event.path) {
-            continue;
-        }
+    loop {
+        tokio::select! {
+            // Check shutdown first (biased).
+            biased;
 
-        println!(
-            "[watcher] event {} flags={:x} path={}",
-            event.id,
-            event.raw_flags,
-            event.path.display(),
-        );
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() {
+                    println!("[watcher] shutdown signal received, stopping");
+                    break;
+                }
+            }
 
-        if tx.send(event).await.is_err() {
-            eprintln!(
-                "[watcher] indexer channel closed, stopping",
-            );
-            break;
+            event = stream.next() => {
+                let event = match event {
+                    Some(e) => e,
+                    None => {
+                        println!("[watcher] FSEvents stream ended");
+                        break;
+                    }
+                };
+
+                if walker::should_ignore_path(&event.path) {
+                    continue;
+                }
+
+                println!(
+                    "[watcher] event {} flags={:x} path={}",
+                    event.id,
+                    event.raw_flags,
+                    event.path.display(),
+                );
+
+                if tx.send(event).await.is_err() {
+                    eprintln!(
+                        "[watcher] indexer channel closed, stopping",
+                    );
+                    break;
+                }
+            }
         }
     }
 
+    // `tx` is dropped here → channel closes →
+    // indexer will drain remaining events and exit.
+    println!("[watcher] stopped");
     Ok(())
 }

@@ -72,8 +72,8 @@ pub fn run_indexer(mut rx: Receiver<Event>) {
         let first = match rx.blocking_recv() {
             Some(event) => event,
             None => {
-                eprintln!(
-                    "Indexer channel closed; shutting down.",
+                println!(
+                    "[indexer] channel closed — shutting down",
                 );
                 break;
             }
@@ -169,8 +169,8 @@ pub fn run_indexer(mut rx: Receiver<Event>) {
         }
 
         if disconnected {
-            eprintln!(
-                "Indexer channel disconnected; shutting down.",
+            println!(
+                "[indexer] draining complete — goodbye",
             );
             break;
         }

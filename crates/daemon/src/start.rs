@@ -1,22 +1,42 @@
+use std::sync::OnceLock;
 use std::{process, sync::Arc, thread};
+
+use tokio::sync::watch;
 
 use blaze_core::{db, tantivy, walker};
 
 use crate::{indexed, watcher, FsEvent};
 
 /// The filesystem root Blaze indexes and watches.
-pub const WATCH_ROOT: &str = ".";
+pub const WATCH_ROOT: &str = "/Users";
+
+/// Global shutdown sender.  Calling `shutdown()` sets
+/// this to `true`, which the watcher picks up via its
+/// `watch::Receiver`.
+static SHUTDOWN_TX: OnceLock<watch::Sender<bool>> = OnceLock::new();
+
+/// Trigger a graceful shutdown of the daemon.
+///
+/// - The watcher sees the signal and stops, dropping
+///   its channel sender.
+/// - The indexer drains any remaining events, commits
+///   Tantivy, persists the last event ID, then exits.
+///
+/// Safe to call from any thread, any number of times.
+pub fn shutdown() {
+    if let Some(tx) = SHUTDOWN_TX.get() {
+        let _ = tx.send(true);
+        println!("[daemon] shutdown signal sent");
+    }
+}
 
 /// Initialise the database, perform a warm or cold start,
-/// then launch the FSEvents watcher + live indexer in the
-/// background.
+/// then launch the FSEvents watcher + live indexer.
 ///
-/// This function returns as soon as both background tasks
-/// are running — the watcher and indexer run for the
-/// lifetime of the process.
-///
-/// Safe to call from any thread; internally it creates a
-/// dedicated tokio runtime so the caller does not need one.
+/// **This function blocks** until a shutdown signal is
+/// received (SIGTERM, SIGINT, or a call to `shutdown()`).
+/// When running inside Tauri, call this from a background
+/// thread so the UI remains responsive.
 pub fn start() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -25,16 +45,13 @@ pub fn start() {
         .build()
         .expect("Failed to build tokio runtime");
 
-    // Run the async startup on that runtime, but return
-    // once the background tasks are spawned so the caller
-    // (Tauri) can continue.
     rt.block_on(async {
         run_startup().await;
     });
 
-    // Leak the runtime so its threads keep running after
-    // this function returns.
-    std::mem::forget(rt);
+    // The runtime drops here — all tasks are already
+    // finished so this is a clean teardown.
+    println!("[daemon] runtime shut down cleanly");
 }
 
 async fn run_startup() {
@@ -89,24 +106,62 @@ async fn run_startup() {
 
     drop(conn);
 
+    // ---- Shutdown channel ----
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    SHUTDOWN_TX.set(shutdown_tx).ok();
+
     // ---- Watcher + Indexer ----
     let (tx, rx) = tokio::sync::mpsc::channel::<FsEvent>(10_000);
 
     println!("[daemon] starting watcher on {}", WATCH_ROOT);
 
     tokio::spawn(async move {
-        if let Err(err) = watcher::start_watcher(WATCH_ROOT, since, tx).await {
+        if let Err(err) =
+            watcher::start_watcher(WATCH_ROOT, since, tx, shutdown_rx).await
+        {
             eprintln!("Watcher failed: {}", err);
         }
     });
 
     println!("[daemon] live indexing active");
 
-    // Indexer is blocking I/O — keep it off the async executor.
-    tokio::task::spawn_blocking(move || {
+    // ---- Signal listener ----
+    tokio::spawn(async {
+        wait_for_signal().await;
+        shutdown();
+    });
+
+    // ---- Indexer (blocking) ----
+    // We await the indexer handle so that `run_startup`
+    // (and therefore `start()`) blocks until the indexer
+    // finishes draining after a shutdown signal.
+    let indexer_handle = tokio::task::spawn_blocking(move || {
         indexed::run_indexer(rx);
     });
-    // Return immediately; the tasks run in background.
+
+    match indexer_handle.await {
+        Ok(_) => println!("[daemon] indexer shut down cleanly"),
+        Err(err) => eprintln!("[daemon] indexer task panicked: {}", err),
+    }
+}
+
+/// Wait for SIGTERM or SIGINT (Ctrl-C).
+async fn wait_for_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigterm =
+        signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
+    let mut sigint =
+        signal(SignalKind::interrupt()).expect("failed to register SIGINT handler");
+
+    tokio::select! {
+        _ = sigterm.recv() => {
+            println!("[daemon] received SIGTERM");
+        }
+        _ = sigint.recv() => {
+            println!("[daemon] received SIGINT (Ctrl-C)");
+        }
+    }
 }
 
 /// Full filesystem walk + index rebuild, with a
@@ -159,8 +214,6 @@ fn cold_bootstrap() {
     }
 
     // ---- Sweep stale rows ----
-    // Any file in the DB whose generation < this boot's
-    // generation was not seen during the scan → deleted.
     let conn = match db::get_connection() {
         Ok(c) => c,
         Err(err) => {
@@ -187,13 +240,11 @@ fn cold_bootstrap() {
         stale_paths.len(),
     );
 
-    // Remove from SQLite (+ empty directories).
     if let Err(err) = db::delete_stale_files(&conn, generation) {
         eprintln!("[daemon] sweep: failed to delete stale rows: {}", err);
         return;
     }
 
-    // Remove from Tantivy.
     match tantivy::initialize_index() {
         Ok(mut tanti) => {
             tantivy::delete_documents(&mut tanti, &stale_paths);
@@ -211,4 +262,3 @@ fn cold_bootstrap() {
         }
     }
 }
-
