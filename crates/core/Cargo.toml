@@ -7,6 +7,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
+dirs = "5.0"
 jwalk = "0.8.1"
 rusqlite = "0.39.0"
 serde = "1.0.228"

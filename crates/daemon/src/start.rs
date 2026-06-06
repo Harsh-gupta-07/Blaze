@@ -3,7 +3,7 @@ use std::{process, sync::Arc, thread};
 
 use tokio::sync::watch;
 
-use blaze_core::{db, tantivy, walker};
+use blaze_core::{db::{self, app_data_dir}, tantivy, walker};
 
 use crate::{indexed, watcher, FsEvent};
 
@@ -57,6 +57,28 @@ pub fn start() {
 async fn run_startup() {
     println!("[daemon] initializing database");
 
+    // ---- App-Support directory check ----
+    // Determine whether the data directories exist *before* we create them.
+    // If they are absent this is guaranteed to be a fresh install / first run,
+    // so we must do a cold start even if a DB file is later seeded somehow.
+    let data_dir   = app_data_dir();
+    let db_dir     = data_dir.join("db");
+    let tantivy_dir = data_dir.join("db/tantivy");
+
+    let dirs_existed = db_dir.exists() && tantivy_dir.exists();
+
+    if !dirs_existed {
+        println!(
+            "[daemon] data directories not found at {} — creating and forcing cold start",
+            data_dir.display()
+        );
+
+        if let Err(err) = std::fs::create_dir_all(&tantivy_dir) {
+            eprintln!("[daemon] failed to create data directories: {}", err);
+            process::exit(1);
+        }
+    }
+
     match db::initialize_db() {
         Ok(_) => {}
         Err(err) => {
@@ -74,33 +96,40 @@ async fn run_startup() {
         }
     };
 
-    let since = match db::get_metadata(&conn, "last_fsevent_id") {
-        Ok(Some(id_str)) => match id_str.parse::<u64>() {
-            Ok(id) => {
-                println!(
-                    "[daemon] warm restart — resuming from FSEvents event ID {}",
+    let since = if !dirs_existed {
+        // Data directories were just created — always cold start.
+        println!("[daemon] fresh data directory — cold start");
+        cold_bootstrap();
+        watcher::SINCE_NOW
+    } else {
+        match db::get_metadata(&conn, "last_fsevent_id") {
+            Ok(Some(id_str)) => match id_str.parse::<u64>() {
+                Ok(id) => {
+                    println!(
+                        "[daemon] warm restart — resuming from FSEvents event ID {}",
+                        id
+                    );
                     id
-                );
-                id
-            }
-            Err(_) => {
-                eprintln!(
-                    "[daemon] invalid stored event ID '{}'; cold start",
-                    id_str
-                );
+                }
+                Err(_) => {
+                    eprintln!(
+                        "[daemon] invalid stored event ID '{}'; cold start",
+                        id_str
+                    );
+                    cold_bootstrap();
+                    watcher::SINCE_NOW
+                }
+            },
+            Ok(None) => {
+                println!("[daemon] no stored event ID — cold start");
                 cold_bootstrap();
                 watcher::SINCE_NOW
             }
-        },
-        Ok(None) => {
-            println!("[daemon] no stored event ID — cold start");
-            cold_bootstrap();
-            watcher::SINCE_NOW
-        }
-        Err(err) => {
-            eprintln!("[daemon] failed to read metadata: {} — cold start", err);
-            cold_bootstrap();
-            watcher::SINCE_NOW
+            Err(err) => {
+                eprintln!("[daemon] failed to read metadata: {} — cold start", err);
+                cold_bootstrap();
+                watcher::SINCE_NOW
+            }
         }
     };
 

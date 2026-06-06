@@ -13,21 +13,27 @@ fn join_path(parent: &str, name: &str) -> String {
     }
 }
 
-fn db_path() -> PathBuf {
-    if let Ok(path) = env::var("BLAZE_DB_PATH") {
+/// Returns the base application-data directory:
+///   `~/Library/Application Support/com.Blaze.Harsh`
+///
+/// Override by setting the `BLAZE_DATA_DIR` environment variable.
+/// This is also used by `tantivy.rs` for the Tantivy index path.
+pub fn app_data_dir() -> PathBuf {
+    if let Ok(path) = env::var("BLAZE_DATA_DIR") {
         return PathBuf::from(path);
     }
 
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let candidates = [cwd.join(".db/main.db"), cwd.join("../.db/main.db")];
+    dirs::data_dir()
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("Library/Application Support")
+        })
+        .join("com.Harsh.Blaze")
+}
 
-    for candidate in candidates {
-        if candidate.parent().is_some_and(|parent| parent.exists()) {
-            return candidate;
-        }
-    }
-
-    cwd.join(".db/main.db")
+fn db_path() -> PathBuf {
+    app_data_dir().join("db/main.db")
 }
 
 pub fn get_connection() -> Result<Connection> {
@@ -107,7 +113,7 @@ pub fn initialize_db() -> Result<()> {
     Ok(())
 }
 
-const BATCH_SIZE: usize = 1000;
+const BATCH_SIZE: usize = 100000;
 pub fn add_files(files: &[FileEntry], conn: &mut Connection, generation: i64) -> Result<()> {
     println!("[db] bulk indexing {} entries (generation {})", files.len(), generation);
 

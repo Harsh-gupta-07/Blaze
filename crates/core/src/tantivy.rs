@@ -7,7 +7,7 @@ use tantivy::{
     Term,
 };
 
-use crate::types::FileEntry;
+use crate::{db::app_data_dir, types::FileEntry};
 
 pub struct TantivyState {
     pub writer: IndexWriter,
@@ -19,14 +19,15 @@ pub struct TantivyState {
 
 pub fn initialize_index(
 ) -> tantivy::Result<TantivyState> {
-    std::fs::create_dir_all("./.db/tantivy")
+    let tantivy_path = app_data_dir().join("db/tantivy");
+    std::fs::create_dir_all(&tantivy_path)
         .unwrap();
 
     let schema = build_schema();
 
-    let index_path = "./.db/tantivy";
+    let index_path = tantivy_path.to_str().unwrap_or(".db/tantivy").to_string();
     let index = open_or_create_index(
-        index_path,
+        &index_path,
         &schema,
     )?;
 
