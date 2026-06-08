@@ -18,3 +18,13 @@ pub fn app_data_dir() -> PathBuf {
         })
         .join("com.Harsh.Blaze")
 }
+
+pub fn join_path(parent: &str, name: &str) -> String {
+    if parent.is_empty() {
+        name.to_string()
+    } else if parent == "/" {
+        format!("/{}", name)
+    } else {
+        format!("{}/{}", parent, name)
+    }
+}

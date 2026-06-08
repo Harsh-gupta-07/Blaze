@@ -2,16 +2,11 @@ use std::path::Path;
 use std::time::Duration;
 
 use fsevent_stream::ffi::{
-    kFSEventStreamCreateFlagFileEvents,
-    kFSEventStreamCreateFlagNoDefer,
-    kFSEventStreamCreateFlagUseCFTypes,
-    kFSEventStreamCreateFlagUseExtendedData,
+    FSEventStreamEventId, kFSEventStreamCreateFlagFileEvents, kFSEventStreamCreateFlagNoDefer,
+    kFSEventStreamCreateFlagUseCFTypes, kFSEventStreamCreateFlagUseExtendedData,
     kFSEventStreamEventIdSinceNow,
-    FSEventStreamEventId,
 };
-use fsevent_stream::stream::{
-    create_event_stream, Event,
-};
+use fsevent_stream::stream::{Event, create_event_stream};
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
@@ -20,8 +15,7 @@ use blaze_core::walker;
 
 /// Sentinel value: start streaming from "now", ignoring
 /// all historical events.
-pub const SINCE_NOW: FSEventStreamEventId =
-    kFSEventStreamEventIdSinceNow;
+pub const SINCE_NOW: FSEventStreamEventId = kFSEventStreamEventIdSinceNow;
 
 /// Start an FSEvents stream on `root` that replays every
 /// event whose ID > `since`, then continues in real-time.
@@ -38,8 +32,7 @@ pub async fn start_watcher(
     since: FSEventStreamEventId,
     tx: Sender<Event>,
     mut shutdown_rx: watch::Receiver<bool>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!(
         "[watcher] starting FSEvents watch on {} (since event ID: {})",
         root, since,
@@ -57,9 +50,7 @@ pub async fn start_watcher(
 
     let mut stream = stream.into_flatten();
 
-    println!(
-        "[watcher] FSEvents stream registered successfully",
-    );
+    println!("[watcher] FSEvents stream registered successfully",);
 
     loop {
         tokio::select! {

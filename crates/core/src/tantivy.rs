@@ -1,13 +1,6 @@
-use tantivy::{
-    doc,
-    schema::*,
-    Index,
-    IndexWriter,
-    TantivyError,
-    Term,
-};
+use tantivy::{Index, IndexWriter, TantivyError, Term, doc, schema::*};
 
-use crate::{utils::app_data_dir, types::FileEntry};
+use crate::{types::FileEntry, utils::app_data_dir};
 
 pub struct TantivyState {
     pub writer: IndexWriter,
@@ -17,24 +10,16 @@ pub struct TantivyState {
     pub name_field: Field,
 }
 
-pub fn initialize_index(
-) -> tantivy::Result<TantivyState> {
+pub fn initialize_index() -> tantivy::Result<TantivyState> {
     let tantivy_path = app_data_dir().join("db/tantivy");
-    std::fs::create_dir_all(&tantivy_path)
-        .unwrap();
+    std::fs::create_dir_all(&tantivy_path).unwrap();
 
     let schema = build_schema();
 
     let index_path = tantivy_path.to_str().unwrap_or(".db/tantivy").to_string();
-    let index = open_or_create_index(
-        &index_path,
-        &schema,
-    )?;
+    let index = open_or_create_index(&index_path, &schema)?;
 
-    println!(
-        "[tantivy] initialized index at {}",
-        index_path,
-    );
+    println!("[tantivy] initialized index at {}", index_path,);
 
     let schema = index.schema();
     let id_field = schema.get_field("id")?;
@@ -56,53 +41,28 @@ pub fn initialize_index(
 fn build_schema() -> Schema {
     let mut schema_builder = Schema::builder();
 
-    schema_builder.add_u64_field(
-        "id",
-        INDEXED | STORED,
-    );
+    schema_builder.add_u64_field("id", INDEXED | STORED);
 
-    schema_builder.add_text_field(
-        "kind",
-        STRING | STORED,
-    );
+    schema_builder.add_text_field("kind", STRING | STORED);
 
-    schema_builder.add_text_field(
-        "path",
-        STRING | STORED,
-    );
+    schema_builder.add_text_field("path", STRING | STORED);
 
-    schema_builder.add_text_field(
-        "name",
-        TEXT | STORED,
-    );
+    schema_builder.add_text_field("name", TEXT | STORED);
 
     schema_builder.build()
 }
 
-fn open_or_create_index(
-    index_path: &str,
-    schema: &Schema,
-) -> tantivy::Result<Index> {
+fn open_or_create_index(index_path: &str, schema: &Schema) -> tantivy::Result<Index> {
     match Index::open_in_dir(index_path) {
-        Ok(index) if has_expected_fields(&index.schema()) => {
-            Ok(index)
-        }
+        Ok(index) if has_expected_fields(&index.schema()) => Ok(index),
 
         Ok(_) => {
-            std::fs::remove_dir_all(index_path)
-                .map_err(TantivyError::from)?;
-            std::fs::create_dir_all(index_path)
-                .map_err(TantivyError::from)?;
-            Index::create_in_dir(
-                index_path,
-                schema.clone(),
-            )
+            std::fs::remove_dir_all(index_path).map_err(TantivyError::from)?;
+            std::fs::create_dir_all(index_path).map_err(TantivyError::from)?;
+            Index::create_in_dir(index_path, schema.clone())
         }
 
-        Err(_) => Index::create_in_dir(
-            index_path,
-            schema.clone(),
-        ),
+        Err(_) => Index::create_in_dir(index_path, schema.clone()),
     }
 }
 
@@ -114,12 +74,9 @@ fn has_expected_fields(schema: &Schema) -> bool {
 }
 
 pub fn make_index(files: &[FileEntry], tantivy: &mut TantivyState) -> tantivy::Result<()> {
-    println!(
-        "[tantivy] bulk indexing {} entries",
-        files.len(),
-    );
+    println!("[tantivy] bulk indexing {} entries", files.len(),);
 
-    for file in files{
+    for file in files {
         tantivy.writer.add_document(doc!(
             tantivy.id_field => file.id as u64,
             tantivy.kind_field => file.kind.as_str(),
@@ -133,11 +90,7 @@ pub fn make_index(files: &[FileEntry], tantivy: &mut TantivyState) -> tantivy::R
     Ok(())
 }
 
-
-pub fn add_document(
-    tantivy: &mut TantivyState,
-    file: &FileEntry,
-) -> tantivy::Result<()> {
+pub fn add_document(tantivy: &mut TantivyState, file: &FileEntry) -> tantivy::Result<()> {
     tantivy.writer.add_document(doc!(
         tantivy.id_field => file.id as u64,
         tantivy.kind_field => file.kind.as_str(),
@@ -147,68 +100,36 @@ pub fn add_document(
             file.name.as_str(),
     ))?;
 
-    println!(
-        "[tantivy] added document {}",
-        file.path,
-    );
+    println!("[tantivy] added document {}", file.path,);
 
     Ok(())
 }
 
-pub fn delete_document(
-    tantivy: &mut TantivyState,
-    path: &str,
-) {
-    tantivy.writer.delete_term(
-        Term::from_field_text(
-            tantivy.path_field,
-            path,
-        ),
-    );
+pub fn delete_document(tantivy: &mut TantivyState, path: &str) {
+    tantivy
+        .writer
+        .delete_term(Term::from_field_text(tantivy.path_field, path));
 
-    println!(
-        "[tantivy] deleted document {}",
-        path,
-    );
+    println!("[tantivy] deleted document {}", path,);
 }
 
-pub fn delete_documents(
-    tantivy: &mut TantivyState,
-    paths: &[String],
-) {
+pub fn delete_documents(tantivy: &mut TantivyState, paths: &[String]) {
     for path in paths {
-        delete_document(
-            tantivy,
-            path,
-        );
+        delete_document(tantivy, path);
     }
 }
 
-pub fn update_document(
-    tantivy: &mut TantivyState,
-    file: &FileEntry,
-) -> tantivy::Result<()> {
-    delete_document(
-        tantivy,
-        &file.path,
-    );
+pub fn update_document(tantivy: &mut TantivyState, file: &FileEntry) -> tantivy::Result<()> {
+    delete_document(tantivy, &file.path);
 
-    add_document(
-        tantivy,
-        file,
-    )?;
+    add_document(tantivy, file)?;
 
-    println!(
-        "[tantivy] updated document {}",
-        file.path,
-    );
+    println!("[tantivy] updated document {}", file.path,);
 
     Ok(())
 }
 
-pub fn commit(
-    tantivy: &mut TantivyState,
-) -> tantivy::Result<()> {
+pub fn commit(tantivy: &mut TantivyState) -> tantivy::Result<()> {
     tantivy.writer.commit()?;
 
     println!("[tantivy] committed writer");

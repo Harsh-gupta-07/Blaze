@@ -175,12 +175,13 @@ dependencies = [
  "jwalk",
  "rusqlite",
  "serde",
+ "serde_json",
  "tantivy",
 ]
 
 [[package]]
 name = "blaze-daemon"
-version = "0.1.2"
+version = "0.1.21"
 dependencies = [
  "blaze-core",
  "fsevent-stream",
@@ -196,6 +197,7 @@ dependencies = [
  "blaze-core",
  "blaze-daemon",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tokio",

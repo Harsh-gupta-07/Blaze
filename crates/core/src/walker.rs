@@ -1,24 +1,13 @@
-use crate::{utils::app_data_dir, types::FileEntry};
+use crate::{types::FileEntry, utils::app_data_dir};
 use jwalk::WalkDir;
-use std::fs::{FileType, Metadata};
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{
-    Hash,
-    Hasher,
-};
-use std::path::{
-    Component,
-    Path,
-};
+use std::fs::{FileType, Metadata};
+use std::hash::{Hash, Hasher};
+use std::path::{Component, Path};
 use std::time::UNIX_EPOCH;
 
-
 // Ignore some dir to reduce point less overhead
-const IGNORED_DIRS: &[&str] = &[
-    "__pycache__",
-    "node_modules",
-];
-
+const IGNORED_DIRS: &[&str] = &["__pycache__", "node_modules"];
 
 /// Returns `true` if a directory (or any path component) named `name`
 /// should be excluded from the index.
@@ -42,19 +31,11 @@ fn should_ignore_dir(name: &str) -> bool {
 ///    (`~/Library/Application Support/com.Harsh.Blaze`), which contains
 ///    the SQLite DB and Tantivy index — we must never re-index our own
 ///    data store.
-pub fn should_ignore_path(
-    path: &Path,
-) -> bool {
+pub fn should_ignore_path(path: &Path) -> bool {
     // Check 1: ignored/hidden component anywhere in the path.
-    if path.components().any(|component| {
-        match component {
-            Component::Normal(name) => {
-                should_ignore_dir(
-                    &name.to_string_lossy(),
-                )
-            }
-            _ => false,
-        }
+    if path.components().any(|component| match component {
+        Component::Normal(name) => should_ignore_dir(&name.to_string_lossy()),
+        _ => false,
     }) {
         return true;
     }
@@ -68,9 +49,7 @@ pub fn should_ignore_path(
     false
 }
 
-pub fn file_kind(
-    file_type: &FileType,
-) -> &'static str {
+pub fn file_kind(file_type: &FileType) -> &'static str {
     if file_type.is_file() {
         "file"
     } else if file_type.is_dir() {
@@ -82,9 +61,7 @@ pub fn file_kind(
     }
 }
 
-pub fn modified_timestamp(
-    metadata: &Metadata,
-) -> Option<i64> {
+pub fn modified_timestamp(metadata: &Metadata) -> Option<i64> {
     metadata
         .modified()
         .ok()
@@ -103,9 +80,7 @@ pub fn file_entry_from_path(
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())?;
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string())?;
 
     Some(FileEntry {
         id: generate_id(&path_str),
@@ -122,7 +97,7 @@ pub fn file_entry_from_path(
 pub fn scan_directory(root: &str) -> Vec<FileEntry> {
     WalkDir::new(root)
         .parallelism(jwalk::Parallelism::RayonNewPool(0))
-        .skip_hidden(true)  // skip hidden files and dirs (names starting with '.')
+        .skip_hidden(true) // skip hidden files and dirs (names starting with '.')
         .process_read_dir(|_, path, _, children| {
             // Also prune non-hidden ignored directories (build artefacts, caches…)
             // so jwalk never descends into them.
@@ -152,22 +127,13 @@ pub fn scan_directory(root: &str) -> Vec<FileEntry> {
             let file_type = entry.file_type();
             let kind = file_kind(&file_type);
 
-            file_entry_from_path(
-                &entry.path(),
-                &metadata,
-                kind,
-                0,
-            )
+            file_entry_from_path(&entry.path(), &metadata, kind, 0)
         })
         .collect()
 }
 
-
-pub fn generate_id(
-    path: &str,
-) -> i64 {
-    let mut hasher =
-        DefaultHasher::new();
+pub fn generate_id(path: &str) -> i64 {
+    let mut hasher = DefaultHasher::new();
 
     path.hash(&mut hasher);
 

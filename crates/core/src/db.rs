@@ -1,18 +1,8 @@
 use rusqlite::{Connection, Result, params};
 
+use crate::utils::{app_data_dir, join_path};
 use crate::{types::FileEntry, walker};
 use std::{fs, path::PathBuf};
-use crate::utils::app_data_dir;
-
-fn join_path(parent: &str, name: &str) -> String {
-    if parent.is_empty() {
-        name.to_string()
-    } else if parent == "/" {
-        format!("/{}", name)
-    } else {
-        format!("{}/{}", parent, name)
-    }
-}
 
 fn db_path() -> PathBuf {
     app_data_dir().join("db/main.db")
@@ -97,7 +87,11 @@ pub fn initialize_db() -> Result<()> {
 
 const BATCH_SIZE: usize = 100000;
 pub fn add_files(files: &[FileEntry], conn: &mut Connection, generation: i64) -> Result<()> {
-    println!("[db] bulk indexing {} entries (generation {})", files.len(), generation);
+    println!(
+        "[db] bulk indexing {} entries (generation {})",
+        files.len(),
+        generation
+    );
 
     for chunk in files.chunks(BATCH_SIZE) {
         let tx = conn.transaction()?;
@@ -474,10 +468,7 @@ pub fn set_metadata(conn: &Connection, key: &str, value: &str) -> Result<()> {
 /// older than `current_gen` — i.e. files that were NOT
 /// seen during the latest cold-bootstrap scan and are
 /// therefore assumed deleted.
-pub fn get_stale_paths(
-    conn: &Connection,
-    current_gen: i64,
-) -> Result<Vec<String>> {
+pub fn get_stale_paths(conn: &Connection, current_gen: i64) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "
         SELECT
@@ -489,9 +480,7 @@ pub fn get_stale_paths(
         ",
     )?;
 
-    let rows = stmt.query_map(params![current_gen], |row| {
-        row.get::<_, String>(0)
-    })?;
+    let rows = stmt.query_map(params![current_gen], |row| row.get::<_, String>(0))?;
 
     let mut paths = Vec::new();
     for row in rows {
@@ -505,10 +494,7 @@ pub fn get_stale_paths(
 /// `current_gen`, then clean up any directories that no
 /// longer contain files.  Returns the number of file
 /// rows removed.
-pub fn delete_stale_files(
-    conn: &Connection,
-    current_gen: i64,
-) -> Result<usize> {
+pub fn delete_stale_files(conn: &Connection, current_gen: i64) -> Result<usize> {
     let removed = conn.execute(
         "DELETE FROM files WHERE generation < ?1",
         params![current_gen],

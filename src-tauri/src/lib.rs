@@ -17,7 +17,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::fetch_files,
             commands::fetch_dir,
-            commands::get_startup_status,
             commands::daemon_status,
             commands::start_daemon_service,
         ])

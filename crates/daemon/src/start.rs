@@ -5,7 +5,8 @@ use std::{process, sync::Arc, thread};
 use tokio::sync::watch;
 
 use blaze_core::{
-    db::{self, app_data_dir},
+    utils::{app_data_dir},
+    db::{self},
     tantivy, walker,
 };
 
