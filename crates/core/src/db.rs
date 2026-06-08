@@ -1,7 +1,8 @@
 use rusqlite::{Connection, Result, params};
 
 use crate::{types::FileEntry, walker};
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
+use crate::utils::app_data_dir;
 
 fn join_path(parent: &str, name: &str) -> String {
     if parent.is_empty() {
@@ -11,25 +12,6 @@ fn join_path(parent: &str, name: &str) -> String {
     } else {
         format!("{}/{}", parent, name)
     }
-}
-
-/// Returns the base application-data directory:
-///   `~/Library/Application Support/com.Blaze.Harsh`
-///
-/// Override by setting the `BLAZE_DATA_DIR` environment variable.
-/// This is also used by `tantivy.rs` for the Tantivy index path.
-pub fn app_data_dir() -> PathBuf {
-    if let Ok(path) = env::var("BLAZE_DATA_DIR") {
-        return PathBuf::from(path);
-    }
-
-    dirs::data_dir()
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("Library/Application Support")
-        })
-        .join("com.Harsh.Blaze")
 }
 
 fn db_path() -> PathBuf {

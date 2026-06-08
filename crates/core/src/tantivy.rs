@@ -7,7 +7,7 @@ use tantivy::{
     Term,
 };
 
-use crate::{db::app_data_dir, types::FileEntry};
+use crate::{utils::app_data_dir, types::FileEntry};
 
 pub struct TantivyState {
     pub writer: IndexWriter,

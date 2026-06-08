@@ -1,4 +1,4 @@
-use crate::{db::app_data_dir, types::FileEntry};
+use crate::{utils::app_data_dir, types::FileEntry};
 use jwalk::WalkDir;
 use std::fs::{FileType, Metadata};
 use std::collections::hash_map::DefaultHasher;
