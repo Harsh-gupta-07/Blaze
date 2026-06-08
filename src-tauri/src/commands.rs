@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use blaze_core::db;
 use blaze_core::types::FileEntry;
+use blaze_daemon;
 
 #[tauri::command]
 pub fn fetch_files() -> Result<Vec<FileEntry>, String> {
@@ -39,4 +42,16 @@ pub fn get_startup_status() -> Result<StartupStatus, String> {
 pub struct StartupStatus {
     pub kind: String,
     pub last_event_id: Option<u64>,
+}
+
+#[tauri::command]
+pub fn daemon_status()->HashMap<String, bool>{
+    let map = blaze_daemon::start::get_status();
+    return map
+}
+
+#[tauri::command]
+pub fn start_daemon_service()-> bool{
+    let stat = blaze_daemon::start::tauri_start_service();
+    return stat
 }

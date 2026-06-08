@@ -18,6 +18,8 @@ pub fn run() {
             commands::fetch_files,
             commands::fetch_dir,
             commands::get_startup_status,
+            commands::daemon_status,
+            commands::start_daemon_service,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
